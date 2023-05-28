@@ -298,3 +298,265 @@ def about(request):
 ```
 
 ## Migrate Kavramı
+
+Veritabanına oluşturulmuş tabloları kaydetmek göndermek için kullanırız.
++ terminalde şu kodu yazalım
+
+```cmd
+python manage.py migrate
+```
++ migrate fonksiyonunu kullandığımızda yeni bir tablo oluşturulur.
++ tablolar oluşturulduktan sonra tablolar içerisine girelim.
++ Bir admin oluşturalım
+
+```cmd
+python manage.py createsuperuser
+```
+
++ Oluşturduğumuz admin kullanıcı ile /admin bölümüne giriş yapabiliriz
+
+## Model oluşturma
+
+Courses isimli yeni bir uygulama oluşturalım
+
+```cmd
+python manage.py startapp courses
+```
++ settings.py' içersinde kaydediyoruz.
+
++ courses klasöründeki models.py' da modellerimiz oluşturacağız.
+
++ modeller class'lar ile oluşturulur
+
++ class'ın her bir attribute'si veritabanındaki tablonun bölümüdür, class'ın kenidisde tabloya denk gelir
+
++ models.py'da Couser isimli bir class oluşturuyoruz. Class'ımızıaihtiyaca göre attr. ekleyeceğiz.
+
+```py
+class Course(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name='Kurs Adı', help_text='Kurs adını yazınız')
+    # Class oluşturduk ve name attributesi verdik.
+    # unique=Eşsiz bir isim olması içi
+    # verbose_name= Admin alanında gözükecek isim
+    # help_text= Açıklayıcı bilgi
+```
+
++ İhtiyacımız olan diğer attributeleri ekleyelim
+
+```py
+class Course(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name='Kurs Adı', help_text='Kurs adını yazınız')
+    description = models.TextField(blank=True, null=True)
+    image = models.ImageField(upload_to="courses/%Y/%m/%d/", default="default_course_image.jpg")
+    date = models.DateTimeField(auto_now=True)
+    avaiable = models.BooleanField(default=True)
+    # blank=True : Kullaıcı bu alanı boş bırakabilir, null=True : Veritabanında bu alan boş kalabilir
+    # upload_to="courses/%Y/%m/%d/" : isimli klasöre yüklenecek ve tarih koyulacak
+    # auto_now=True : Her düzenlemede tarih güncellenir
+```
+
++ Modelimizi oluşturduktan sonra admin sayfasında kendi ismi ile gözükmesini istiyorsak;
+```py
+    def __str__(self):
+        return self.name
+```
+
++ Model'imiz hazır, Modelimizi veritabanına kaydetmemiz gerekli;
++ Öncelikle veritabanına kaydetmeye hazır hale getireceğiz
+
+```cmd
+python manage.py makemigrations
+```
+
++ Hazır olan migration dosyalarını veritabanına kaydetme işlemi
+
+```cmd
+python manage.py migrate
+```
+
++ Tablomuz Hazır..
+
+### Admin alanında Modelleri görüntüleme
+
+Oluşturulan modeli admin alanında görmek için onu tanıtmamız gerekli
+
++ Courses app'inde admin.py'a girelim ve Course'i tanıtalım
+
+```py
+from django.contrib import admin
+from .models import Course
+
+# Register your models here.
+
+admin.site.register(Course)
+```
+
+### MEDIA dosyalarının konumunu ayarlama
+
+Media dosyalarımız belirli bir klasörde olmalı bu sebeple yolunu settings.py içersinde belirtelim
++ Static_url yazdığımız yerin hemen altına yazabiliriz.
+
+```py
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
+
+# MEDIA FILES
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+```
+
++ media'ya eklediğimiz url'lere ulaşmak içinse;
++ urls.py kısmında ayarlamamız gereken yerler var
++ öncelikle settings ve static import ediyoruz
++ sonrasında + static ile yapılandırıyoruz
+
+_+static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)_: Medya dosyalarının doğru şekilde sunulması için gerekli olan URL yapılandırması. MEDIA_URL medya dosyalarının URL'sini belirtirken, MEDIA_ROOT medya dosyalarının yerel dosya sistemindeki konumunu belirtir. Bu yapılandırma, geliştirme ortamında medya dosyalarını sunmanızı sağlar
+
+```py
+
+from django.contrib import admin
+from django.urls import path,include
+from django.conf.urls.static import static # yeni
+from django.conf import settings # yeni
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('pages.urls'))
+] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT) # yeni
+
+```
+
+## Admin Alanını Özelleştirme
+
+### Filtreleme, Arama vs işlemleri admin paneline ekleme
+
+admin.py içeriğini güncelleyelim
+```py
+from django.contrib import admin
+from .models import Course
+
+# Register your models here.
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    search_fields = ('name','description') # 1
+    list_display = ('name', 'avaiable')  # 2
+    list_filter = ('avaiable',)  # 3
+    
+```
+![admin](Django-Notlar-Resim/admin1.png)
+
+### İnteface kurma
+
++ paketi yükle
+```cmd
+pip3 install django-admin-interface
+```
++ installed_app kısmına ekle
+```py
+    'admin_interface',
+    'colorfield',
+```
+
+
+## Kursları Siteye Ekleme(işlemleri tersten yapabilrisiniz)
+
+### Courses sayfasını yapılandırma
+
++ Kurslar sayfası için yol belirleyelim, main urls.py'a ;
+
+```py
+path('courses/', include(courses.urls)),
+```
+
++ Courses klasöründe urls.py oluşturalım, importları yapalım
++ Courses path'ını yazalım;
+
+```py
+path('', views.courses_list, name='courses'),
+```
++ _navbar.html düzenlemesi;
+
+```html
+<li class="nav-item {% if '/' == request.path %} active {% endif %}"><a class="nav-link" href="{% url 'index' %}">Home</a></li>
+<li class="nav-item {% if 'about' in request.path %} active {% endif %} "><a class="nav-link" href="{% url 'about' %}">About Us</a></li>
+<li class="nav-item {% if 'courses' in request.path %} active {% endif %} "><a class="nav-link" href="{% url 'courses' %}">Courses</a></li> <!-- Düzenleme -->
+<li class="nav-item"><a class="nav-link" href="teachers.html">Teachers</a></li>
+<li class="nav-item"><a class="nav-link" href="contact.html">Contact</a></li>
+<!-- Düzenleme -->
+```
+
++ views.py ' da yolumuza fonksiyon oluşturalım.
+
+```py
+def courses_list(request):
+    return render(request, 'courses.html')
+```
+
++ Templates klasörümüzde courses.html oluşturalım
++ SITE içersinde blog-single.html içeriğini courses.html'e kopyalayalım.
++ include, block işlemlerini yaptık
+
+### Courses sayfası içine dinamik olarak kursları ekleme
+
+Bu işlem viesw.py içersinde olacak, view.py'a Course modelini import ederiz, bir değişkene Course modelindeki tüm nessneleri aktarırız. Sonra bunu bir dictinary aracılığıyla render edeceğimiz sayfaya göndeririz.
+
+```py
+from django.shortcuts import render
+from . models import Course # 1-import et
+
+# Create your views here.
+
+def courses_list(request):
+    courses = Course.objects.all() # 2-kursları değişkene ata
+
+    context = {
+        'courses': courses,
+    } # 3-dict'e çevir
+
+    return render(request, 'courses.html', context) # 4-dict'i render'a ekle
+
+```
+
+Şimdi courses.html içersinde for döngüsü ile kurslarımızı dinamik olarak gösterebiliriz
+```html
+                {% for course in courses %}
+
+                <div class="col-lg-6 col-md-6 col-12">
+                    <div class="course-item">
+						<div class="image-blog">
+							<img src="{{course.image.url}}" alt="" class="img-fluid">
+						</div>
+						<div class="course-br">
+							<div class="course-title">
+								<h2><a href="#" title="">{{course.name}}</a></h2>
+							</div>
+							<div class="course-desc">
+								<p>{{course.description}}</p>
+							</div>
+						</div>
+						<div class="course-meta-bot">
+							<ul>
+								<li><i class="fa fa-calendar" aria-hidden="true"></i> 6 Month</li>
+								<li><i class="fa fa-users" aria-hidden="true"></i> 56 Student</li>
+								<li><i class="fa fa-book" aria-hidden="true"></i> 7 Books</li>
+							</ul>
+						</div>
+					</div>
+                </div><!-- end col -->
+
+                {% endfor %}
+```
+
+**Kursları eklerken en son gelenin ilk başta gözükmesi için;**
+
+```py
+courses = Course.objects.all().order_by('-date')
+# .order_by(-date) eklendi
+```
+
+**Her bir kursun açıklamasaı farklı uzunluklarda olabilir.Görünüm bozulabilir bunu düzeltmek için**
+
+```html
+<p>{{course.description | truncatechars:100}}</p>
+``` 
