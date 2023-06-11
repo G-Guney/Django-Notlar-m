@@ -111,7 +111,7 @@ urlpatterns = [
     path('pages/', include('pages.urls')), # <--
 ]
 ```
-## Dosya İşlemleri 
+## Dosya İşlemleri (*)
 ### Templates kullanımı
 
 Normalde httpresponse içeriğine bütün html kodları yazılabilir teorik olarak fakat bunun için ayrı bir kullanımımız mevcut.
@@ -297,7 +297,9 @@ def about(request):
 <li class="nav-item {% if 'about' in request.path %} active {% endif %} "><a class="nav-link" href="{% url 'about' %}">About Us</a></li>
 ```
 
-## Migrate Kavramı
+## Model oluşturma ve Migrate kavramı
+
+### Migrate Kavramı
 
 Veritabanına oluşturulmuş tabloları kaydetmek göndermek için kullanırız.
 + terminalde şu kodu yazalım
@@ -315,7 +317,7 @@ python manage.py createsuperuser
 
 + Oluşturduğumuz admin kullanıcı ile /admin bölümüne giriş yapabiliriz
 
-## Model oluşturma
+### Model oluşturma
 
 Courses isimli yeni bir uygulama oluşturalım
 
@@ -560,3 +562,728 @@ courses = Course.objects.all().order_by('-date')
 ```html
 <p>{{course.description | truncatechars:100}}</p>
 ``` 
+
+## İlişkiler
+
+### OneToMany İlişkisi
+
+#### Kursları kategorilere ayıracağız.
+1. Kategori modeli oluşturacağız ve kurslarla kategori arasında bir ilişki olacak
+_OneToMany_ ilişkisi: Bir kategori birden fazla kursta olabilir, fakat bir kurs tek kategoride olur şeklinde işme yapacağız.
+
+```py
+class Category(models.Model): # kategori modelini oluşturduk
+    name = models.CharField(max_length=50, null=True)
+    slug = models.SlugField(max_length=50, unique=True, null=True)
+    
+    def __str__(self):
+        return self.name
+
+class Course(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name='Kurs Adı', help_text='Kurs adını yazınız')
+    category = models.ForeignKey(Category, null=True, on_delete=models.DO_NOTHING) # burada ilişkilnedirdik
+    description = models.TextField(blank=True, null=True)
+    image = models.ImageField(upload_to="courses/%Y/%m/%d/", default="default_course_image.jpg")
+    date = models.DateTimeField(auto_now=True)
+    avaiable = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+# null = True kullanma sebebimiz yeni eklediğimiz bir alan oldupu için , boş olsada veri tabanında hata vermesim
+```
+2. Migrate işlemleri yapılır...
+3. Admin panelinde görünmesi için admin.py'a kaydedilir
+
+```py
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    prepopulated_fields = {'slug' : ('name',)}
+    # slug alanı name' den alınacak
+    # name yanına virgül koyduk ki string olarak değil tuble olarak alsın
+```
+
+4. Admin panelinde kategoriler görüntülenir ve kurslara kategori eklenir
+
+#### Şimdi kurslara tıkladığımızda kendi tekil sayfalarını yapacağız
+
+1. Öncelikle yollarını belirtelim
+
+```py
+    path('<slug:category_slug>/<int:course_id>', views.courses_detail, name='course_detail'),
+```
+
+2. Course_detail view.py' yazalım
+path yazarkan slug ve id parametrelerini kullandık bu sebeple request ile 2 parametre daha yazmamız gerekli
+**category__slug yazarken cift underscore yazam sebebimiz ilk once kurs daha sonra kursın kategorisinin slug'ı 2 yol ilerliyor, id'de ise direkt kursun id'si**
+
+```py
+def course_detail(request, category_slug, course_id):
+    course = Course.objects.get(category__slug = category_slug, id = course_id)
+    context = {
+        'course': course,
+    }
+    return render(request, 'course_detail.html', context)
+```
+3. course.html sayfasını yapalım
+4. courses.html'de linke course.html 'i yazalım 2 şekilde olur
+
+```html
+
+<h2><a href="{% url 'course_detail' course.category.slug course.id %}" title="">{{course.name}}</a></h2> <!-- 1.yöntem -->
+
+<h2><a href="/courses/<slug>/<id>" title="">{{course.name}}</a></h2> <!-- 2.yöntem -->
+
+```
+5. course.html verileri dinamik hale getirelim
+
+
+### ManyToMany ilişkisi
+
+Derslerimize etiketler ekleyeceğiz , bir ders birden fazla etiket alabilir veya bir etiket birden fazla derste olabilir. Bu sebeple ManyToMany ilişkisi kuracağiz
+
+#### Tags modeli oluşturma
+
+1. courses app'de models.py'a bir Tag adlı model oluşturalım
+
+```py
+class Tag(models.Model):
+    name = models.CharField(max_length=50, null=True)
+    slug = models.SlugField(max_length=50, unique=True, null=True)
+
+    def __str__(self):
+        return self.name
+```
+
+2. admin.py'a aktralım
+
+```py
+
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    prepopulated_fields = {'slug' : ('name',)}
+
+```
+
+4. Migrate işlemlerini yapalım. Admin artık sayfasında görebiliriz
+5. Admin syafasında bir kaç tane tag oluşturalım
+6. course class'ımıza tags adlı yeni bir field ekleyelim
+
+```py
+class Course(models.Model):
+    name = models.CharField(max_length=200, unique=True, verbose_name='Kurs Adı', help_text='Kurs adını yazınız')
+    category = models.ForeignKey(Category, null=True, on_delete=models.DO_NOTHING)
+    tags = models.ManyToManyField(Tag, blank=True, null=True) # Ekleme işlemi
+    description = models.TextField(blank=True, null=True)
+    image = models.ImageField(upload_to="courses/%Y/%m/%d/", default="default_course_image.jpg")
+    date = models.DateTimeField(auto_now=True)
+    avaiable = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+```
+
+7. Admin alanından tag seçebiliriz.
+
+## Kategori ve Tag'e göre siteyi dinamikleştirme
+
+### Ktegori ile filtreleyerek Ekranan yazdırma
+
+1. urls.py' a ekleme yapalım
+
+```py
+    path('categories/<slug:category_slug>', views.category_list, name='courses_by_category'),
+```
+
+2. templatelerimizde görebilmemiz için views'deki fonsksiyonların contextlerine categorileri tanıtmamız lazım
+
+```py
+from django.shortcuts import render
+from . models import Course, Category
+
+# Create your views here.
+
+def courses_list(request):
+    courses = Course.objects.all().order_by('-date')
+    categories = Category.objects.all()
+
+    context = {
+        'courses': courses,
+        'categories': categories,
+    }
+
+    return render(request, 'courses.html', context)
+
+def course_detail(request, category_slug, course_id):
+    course = Course.objects.get(category__slug = category_slug, id = course_id)
+    context = {
+        'course': course,
+    }
+    return render(request, 'course.html', context)
+
+def category_list(request, category_slug):
+    courses = Course.objects.all().filter(category__slug = category_slug)
+    categories = Category.objects.all()
+    context = {
+        'courses': courses,
+        'categories': categories,
+    }
+    return render(request, 'courses.html', context)
+
+```
+
+3. Course.html'de for döngüsü ile kategorilerinmizi ekrana çıktı alalım
+
+```py
+<div class="widget-categories">
+	<h3 class="widget-title">Categories</h3>
+	<ul>
+		{% for category in categories %}
+		<li><a href="#">{{category.name}}</a></li>
+		{% endfor %}
+	</ul>
+</div>
+```
+4. href düzenleyelim
+
+```py
+<li><a href="{% url 'courses_by_category' category.slug %}">{{category.name}}</a></li>
+```
+
+### Tag ile filtreleyerek Ekranan yazdırma
+
+**Kategori ile aynıdır fakat burada daha kısa bir yöntem kullanacağız**
+
+1. yol oluşturalım
+
+```py
+path('tags/<slug:tag_slug>', views.tag_list, name='courses_by_tag')
+```
+2. Yolun fonksiyonunu oluşturalım
+
+```py
+def tag_list(request, tag_slug):
+    courses = Course.objects.all().filter(tags__slug = tag_slug)
+    tags = Tag.objects.all()
+    context = {
+        'courses': courses,
+        'tags' : tags
+    }
+    return render(request, 'courses.html', context)
+```
+3. Querry'leri ekleyelim, context'i güncelleyelim
+
+```py
+from django.shortcuts import render
+from . models import Course, Category, Tag 
+
+# Create your views here.
+
+def courses_list(request):
+    courses = Course.objects.all().order_by('-date')
+    categories = Category.objects.all()
+    tags = Tag.objects.all()
+
+    context = {
+        'courses': courses,
+        'categories': categories,
+        'tags' : tags
+    }
+
+    return render(request, 'courses.html', context)
+
+def course_detail(request, category_slug, course_id):
+    course = Course.objects.get(category__slug = category_slug, id = course_id)
+    context = {
+        'course': course,
+    }
+    return render(request, 'course.html', context)
+
+def category_list(request, category_slug):
+    courses = Course.objects.all().filter(category__slug = category_slug)
+    categories = Category.objects.all()
+    tags = Tag.objects.all()
+    context = {
+        'courses': courses,
+        'categories': categories,
+        'tags' : tags
+    }
+    return render(request, 'courses.html', context)
+
+def tag_list(request, tag_slug):
+    courses = Course.objects.all().filter(tags__slug = tag_slug)
+    tags = Tag.objects.all()
+    context = {
+        'courses': courses,
+        'tags' : tags
+    }
+    return render(request, 'courses.html', context)
+
+```
+
+4. Dinamikleştirelim
+
+```py 
+<ul class="tags">
+	{% for tag in tags %}
+	<li><a href="{% url 'courses_by_tag' tag%}"><b>{{tag.name}}</b></a></li>
+	{% endfor %}
+</ul>
+```
+
+5. Seçili tag'ı kalın yazı ile yazmak
+
+```py
+{% for tag in tags %}
+	<li><a href="{% url 'courses_by_tag' tag.slug %}">{% if tag.slug in request.path %}<b>{{tagname}}</b>{% else %}{{tag.name}}{% endif %}<a></li>
+{% endfor %}
+```
+
+##Önemli : Bir önceki tag ve kategori işlemlerinde kendimiz tekrar ettik, kendini tekrar eden kodlardan kurtulmamız gerekir.Bunun için Class Based Views inceliyeceğiz.
+
+## Class Views ve Function Views arasındaki fark
+
+Class kullanımı inheritance avantajı sağlar. Daha kısa kod yazabiliriz.
+
+İşimizi hangisi ile halledebiliyorsak onunla yaparız
+
+**Class viewler django3'de dökümantasyondan faydanılır**
+
+### TemplateView
+
+#### as_view()
+
+_Genelde static sayfalarda ve biraz veri göstermek isiyorsak kullanılır_
+
+1. pages app'de views kısmına gelelim önceki fonksiyonları yorum satırına aldık
+
+2. templateview import edelim
+
+```py
+from django.views.generic import TemplateView
+```
+
+3. AboutView isimli class oluşturalım TemplateViews'den miras alıcak
+class'larda *return render* yerine *template_name* kullanılır
+
+```py
+class AboutView(TemplateView):
+    template_name = 'about.html'
+```
+
+4. Şimdi yol uzantısını yazalım url.py' da import ettikten sonra *views.about* kısmını *AboutView.as_view()* ile değiştirelim
+
+```py
+from django.urls import path
+from . import views
+from pages.views import AboutView
+
+urlpatterns = [
+    path('', views.index, name='index'),
+    path('about/', AboutView.as_view(), name='about'),
+]
+
+```
+
+#### get_data_content()
+
+Eğer dinamik olarak veri almak istiyorsak kullanırız
+
+1. İndex viewsi için aboutta yaptığımız işlemleri yapalım
+2. şimdi templateView'in get_context_data() metodunu kullanarak veri çekeceğiz. Çekeceğimiz verileri import etmemeiz gerekli.
+Kursların available olanlarından son oluşturulanı başa olacak şekilde çekip sıraladık ve son  tanenisi slice ettik. Kursların available olanlarının sayısını çektik
+
+```py
+from typing import Any, Dict
+from django.shortcuts import render
+from django.views.generic import TemplateView
+from courses.models import Course
+# Create your views here.
+
+# def index(request):
+#     return render(request, 'index.html')
+
+class IndexView(TemplateView):
+    template_name = 'index.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['courses'] = Course.objects.filter(avaiable = True).order_by('-date')[:2]
+        context['total_course'] = Course.objects.filter(avaiable = True).count()
+        return context
+```
+
+3. İndex sayfamızda çektiğimiz verileri yerleştirelim
+
+```html
+{% for course in courses %}
+<div class="row align-items-center">
+    <div class="col-xl-6 col-lg-6 col-md-12 col-sm-12">
+        <div class="message-box">
+            <h2>{{course.name}}</h2>
+            <p>{{course.description}}</p>
+            <a href="#" class="hover-btn-new orange"><span>Learn More</span></a>
+        </div><!-- end messagebox -->
+    </div><!-- end col -->
+			
+				
+	<div class="col-xl-6 col-lg-6 col-md-12 col-sm-12">
+        <div class="post-media wow fadeIn">
+                <img src="{{course.image.url}}" alt="" class="img-fluid img-rounded">
+        </div><!-- end media -->
+    </div><!-- end col -->
+</div>
+{% endfor %}
+```
+
+4. Kursları sağlı sollu sıralamak için
+forloop'un ilk elemanı ise şeklinde
+
+```html
+			{% for course in courses %}
+            <div class="row align-items-center">
+
+				{% if not forloop.first  %}
+
+				<div class="col-xl-6 col-lg-6 col-md-12 col-sm-12">
+                    <div class="post-media wow fadeIn">
+                        <img src="{{course.image.url}}" alt="" class="img-fluid img-rounded">
+                    </div><!-- end media -->
+                </div><!-- end col -->
+				
+				{% endif %}
+
+                <div class="col-xl-6 col-lg-6 col-md-12 col-sm-12">
+                    <div class="message-box">
+                        <h2>{{course.name}}</h2>
+                        <p>{{course.description}}</p>
+                        <a href="#" class="hover-btn-new orange"><span>Learn More</span></a>
+                    </div><!-- end messagebox -->
+                </div><!-- end col -->
+				{% if forloop.first  %}
+				
+				<div class="col-xl-6 col-lg-6 col-md-12 col-sm-12">
+                    <div class="post-media wow fadeIn">
+                        <img src="{{course.image.url}}" alt="" class="img-fluid img-rounded">
+                    </div><!-- end media -->
+                </div><!-- end col -->
+				{% endif %}
+			</div>
+			{% endfor %}
+```
+
+5. Kurs sayımızı dinamikleştirelim
+
+totat_course ile çektiğimiz veriyi yerleştiriyoruz
+
+```html
+<div class="col-md-4 col-sm-4 col-xs-12">
+	<span data-scroll class="global-radius icon_wrap effect-1 alignleft"><i class="flaticon-online"></i></span>
+	<p class="stat_count">{{total_course}}</p>
+	<h3>Courses</h3>
+</div><!-- end col -->
+```
+
+## Class view devam
+
+### Teacher app oluşturuyoruz
+
+**app oluşturma aşamaları önceki konuda mevcut**
+
+1. teachers model dosyamızda model oluşturacağız
+
+```py
+class Teacher(models.Model):
+    name = models.CharField(max_length=50)
+    title = models.CharField(max_length=50)
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to="teachers/%Y/%m/%d", default="teachers/default_teacher_image.jpg")
+    facebook = models.URLField(max_length=100, blank=True)
+    twitter = models.URLField(max_length=100, blank=True)
+    linkedin = models.URLField(max_length=100, blank=True)
+    youtube = models.URLField(max_length=100, blank=True)
+
+    def __str__(self):
+        return self.name
+```
+
+2. Kurslar ile Ögretmenler arası ilişkiyi kuralım,Course models.py 'da Course Class'ına Teacher'ı ekleyelim
+
+*Bir kursu bir öğretmen verebilir*
+*Bir öğretmen birden fazla kurs verebilir*
+
+```py
+    teacher = models.ForeignKey(Teacher, null=True, on_delete=models.CASCADE)
+```
+**CASCADE : bir öğretmeni silersek , öğretmenin verdiği kurslarda silinecek**
+
+3. Teachers'ın url ayarnını yapalaım ve html'i templates'e ekleyelim(teacher.html)
+
+```py
+from django.urls import path
+
+urlpatterns = [
+    path('', TeacherListView.as_view(), name='teacher'),
+]
+
+```
+
+4. Teacher app'de ListView kullanacağız...
+
+### ListView kullanımı
+
+- Birden daha fazla nesne göstermek için kullanırız
+
+1. TeacherListView isimli bir view oluşturduk, ListView'i import edelim ve Miras alalım
+
+```py
+from django.shortcuts import render
+from django.views.generic.list import ListView
+from teachers.models import Teacher
+
+# Create your views here.
+
+class TeacherListView(ListView):
+    model = Teacher # içerikte hangi modeli kullanacağız
+    template_name = 'teachers.html' # sayfa adımız (render edilecek yer)
+
+```
+
+2. Admin alanında bir kaç teacher oluşturalım
+
+3. teacher.html'de içeriklerimiz yerleştirelim
+
+```py
+{% for teacher in object_list %}
+				
+<div class="col-lg-3 col-md-6 col-12">
+	<div class="our-team">
+		<div class="team-img">
+			<img src="{{teacher.image.url}}">
+			<div class="social">
+				<ul>
+					<li><a href="{{teacher.facebook}}" class="fa fa-facebook"></a></li>
+					<li><a href="{{teacher.twitter}}" class="fa fa-twitter"></a></li>
+					<li><a href="{{teacher.linkedin}}" class="fa fa-linkedin"></a></li>
+					<li><a href="{{teacher.youtbe}}" class="fa fa-skype"></a></li>
+				</ul>
+			</div>
+		</div>
+		<div class="team-content">
+			<h3 class="title">{{teacher.name}}</h3>
+			<span class="post">{{teacher.title}}</span>
+		</div>
+	</div>
+</div>
+
+{% endfor %}
+
+```
+4. ListView Özellileri
+
++ contex_object_name = 'teachers' ;
+    for döngüsünde object_list yerine teachers kullanabiliriz
+
++ quertset = Teacher.objects.all()[:1] ;
+    sayfamızda 1 tane öğretmen gözükür
+
++ paginate_by = 1;
+    paginate document'ini incele. next , previous yapar
+
+**document'leri incele daha fazlası için çok yararlı bilgiler var**
+
+### DetailView Kullanımı
+
+Öğretmenlerin kendi özel sayfalarını oluşturacağız.
+
+1. teacher.html isimli templates dosyamızı oluşturuyoruz
+
+2. kullanacağımız path'ı yazalım
+
+```py
+from django.urls import path
+
+from teachers.views import TeacherListView, TeacherDetailView # import ettik, şuan böyle bir class yok fakat birazdan view.py kısmında oluşturacağız
+
+urlpatterns = [
+    path('', TeacherListView.as_view(), name='teachers'),
+    path('teacher/<int:pk>', TeacherDetailView.as_vieww(), name='teacher_detail') # buraya yazdık
+]
+```
+
+3. Teachers.html'de teacher.html'e gidecek linki oluşturuyoruz
+
+```html
+<h3 class="title"><a href="{% url 'teacher_detail' teacher.pk %}"></a>{{teacher.name}}</h3>
+```
+
+**Django pk veya slug istiyor bu sebeple pk kullandık**
+
+#### object yerine ilgili verinin ismini kullanmak
+
+```py
+class TeacherDetailView(DetailView):
+    model = Teacher
+    template_name = 'teacher.html'
+    context_object_name = 'teacher' # burada belirttik
+```
+html'de değiştirelim
+
+```html
+	
+	<div class="all-title-box">
+		<div class="container text-center">
+			<h1>{{teacher.name}}</h1><!-- <h1>{{object.name}}</h1> -->
+		</div>
+	</div>
+```
+
+4. Teacher verilerini html sayfamıza çekelim, imagei description vs..
+
+5. Şimdi hoca tarafından verilen kursları sayfaya ekleyeceğiz.
+
+#### Bir data kullanırken başka bir datayı'da ekleme işlemi(Farklı modellerle aynı sayfa içinde çalışma)
+
++ TeacherDetailView' e geleleim get_context_data() metodunu kullancağız
+```py
+from typing import Any, Dict
+from django.shortcuts import render
+from django.views.generic.list import ListView
+from django.views.generic.detail import DetailView
+from teachers.models import Teacher
+from courses.models import Course  # kullanacağımız modeli import ettik
+
+# Create your views here.
+
+class TeacherListView(ListView):
+    model = Teacher # içerikte hangi modeli kullanacağız
+    template_name = 'teachers.html' # sayfa adımız (render edilecek yer)
+    # paginate_by = 1
+    # queryset = Teacher.objects.all()[:1]
+
+    # def get_queryset(self):
+    #     return Teacher.objects.all()[:2]
+
+class TeacherDetailView(DetailView):
+    model = Teacher
+    template_name = 'teacher.html'
+    context_object_name = 'teacher'
+
+    def get_context_data(self, **kwargs): # g_c_d kullanarak bir dict oluşturduk ve courses isimli key'e aktardık
+        context = super().get_context_data(**kwargs)
+        context['courses'] = Course.objects.all()
+        return context
+
+```
+
++ html'de contexti kullananlım
+```html
+{% extends "partials/_base.html" %}
+{% load static %}
+	
+	{% block content %}
+	
+	
+	<div class="all-title-box">
+		<div class="container text-center">
+			<h1>{{teacher.name}}</h1>
+		</div>
+	</div>
+	
+    <div id="overviews" class="section wb">
+        <div class="container">
+            <div class="row"> 
+                <div class="col-lg-12 blog-post-single">
+					
+					<div class="blog-author">
+						<div class="author-bio">
+							<h3 class="author_name">{{object.name}}</h3>
+							<h5>{{teacher.title}}</a></h5>
+							<p class="author_det">
+								{{teacher.description}}
+							</p>
+						</div>
+						<div class="author-desc">
+							<img src="{{teacher.image.url}}" alt="about author">
+							<ul class="author-social">
+								<li><a href="{{teacher.facebook}}"><i class="fa fa-facebook"></i></a></li>
+								<li><a href="{{teacher.twitter}}"><i class="fa fa-twitter"></i></a></li>
+								<li><a href="{{teacher.linkedin}}"><i class="fa fa-linkedin"></i></a></li>
+							</ul>
+						</div>
+					</div>
+                </div><!-- end col -->
+            </div><!-- end row -->
+
+			<div class="row"> 
+
+				{% for course in courses %}
+				
+                <div class="col-lg-4 col-md-6 col-12">
+                    <div class="course-item">
+						<div class="image-blog">
+							<img src="{{course.image.url}}" alt="" class="img-fluid">
+						</div>
+						<div class="course-br">
+							<div class="course-title">
+								<h2><a href="#" title="">{{course.name}}</a></h2>
+							</div>
+							<div class="course-desc">
+								<p>{{course.description}}</p>
+							</div>
+							<div class="course-rating">
+								4.5
+								<i class="fa fa-star"></i>	
+								<i class="fa fa-star"></i>	
+								<i class="fa fa-star"></i>	
+								<i class="fa fa-star"></i>	
+								<i class="fa fa-star-half"></i>								
+							</div>
+						</div>
+						<div class="course-meta-bot">
+							<ul>
+								<li><i class="fa fa-calendar" aria-hidden="true"></i> 6 Month</li>
+								<li><i class="fa fa-users" aria-hidden="true"></i> 56 Student</li>
+								<li><i class="fa fa-book" aria-hidden="true"></i> 7 Books</li>
+							</ul>
+						</div>
+					</div>
+                </div><!-- end col -->
+
+				{% endfor %}
+            </div><!-- end row -->		
+        </div><!-- end container -->
+    </div><!-- end section -->
+{% endblock content %}
+```
+**Burada tüm kursları çektik. Sonraki aşamalarda sadece öğretmene ait olanı çekeceğiz**
+
+6. Admin panelinden kurslara teacher atayalım
+7. Sadece Öğretmene ait olan kurslar için
+
+```py
+class TeacherDetailView(DetailView):
+    model = Teacher
+    template_name = 'teacher.html'
+    context_object_name = 'teacher'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # context['courses'] = Course.objects.all()
+        context['courses'] = Course.objects.filter(avaiable = True, teacher = self.kwargs['pk']) # filtreleme işlemi
+        return context
+```
+
+8. Kursun detay sayfasına gittiğimizde kursu veren öğretmeni göstermek için
+
+```html
+<h3 class="author_name"><a href="#">{{course.teacher.name}}</a></h3>
+```
+_course'nın Teacher'ı mevcut ve context olarak göndermiştik_
+
+9. Kurs sayfasında kursu veren öğretmenin sayfasnıa geçiş
+
+*Kurs sayfasından gittiğimiz için başına coruse koymalıyız.*
+```html
+<h3 class="author_name"><a href="{% url 'teacher_detail' course.teacher.pk %}">{{course.teacher.name}}</a></h3>
+```
